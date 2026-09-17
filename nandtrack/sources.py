@@ -184,6 +184,26 @@ class HttpSource(PriceSource):
         return f"{self.name} (live)"
 
 
+def write_rule(sku: str, url: str, selector: str = "", regex: str = "") -> None:
+    """Add or replace one product's scraping rule in sources.json."""
+    path = sources_path()
+    config: Dict = {}
+    if path.exists():
+        try:
+            config = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            config = {}
+    config.setdefault("retailer", "my-retailer")
+    config.setdefault("timeout", 12)
+    rule: Dict[str, str] = {"url": url}
+    if selector:
+        rule["selector"] = selector
+    if regex:
+        rule["regex"] = regex
+    config.setdefault("products", {})[sku] = rule
+    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+
 def build_sources(use_live: bool) -> List[PriceSource]:
     sources: List[PriceSource] = [ModelledSource()]
     if use_live:

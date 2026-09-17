@@ -1,6 +1,6 @@
 # NANDTrack
 
-[![Build Windows executable](https://github.com/PertitDemiri/nand-price-tracker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/PetritDemiri/nand-price-tracker/actions/workflows/build-windows.yml)
+[![Build Windows executable](https://github.com/YOUR-USERNAME/nand-price-tracker/actions/workflows/build-windows.yml/badge.svg)](https://github.com/YOUR-USERNAME/nand-price-tracker/actions/workflows/build-windows.yml)
 
 A Windows desktop app that tracks what the memory shortage has done to PC
 hardware prices since September 2025 — RAM, graphics cards, SATA SSDs and NVMe
@@ -180,7 +180,18 @@ so in the status bar, and keeps the charts up.
 
 ## Adding your own products
 
-Append to `CATALOG` in `nandtrack/catalog.py`:
+Press **Add product** in any category view. Give it a name and what the part
+costs today, and it works the September 2025 baseline backwards off that
+category's curve, then backfills a year of history so the new line starts where
+every other line starts. Paste a shop URL in the optional live-price box and it
+registers the scraping rule for you as well.
+
+Products you add yourself can be removed again with the **Remove** button next
+to it. The ones that ship with the app can't — they're rebuilt from
+`catalog.py` on every launch.
+
+If you would rather add a batch of them in code, append to `CATALOG` in
+`nandtrack/catalog.py`:
 
 ```python
 _p("nvme-990evo-1tb", "Samsung 990 EVO 1TB", "nvme_ssd",

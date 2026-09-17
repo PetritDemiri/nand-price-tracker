@@ -7,7 +7,8 @@ from typing import List, Optional
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFrame,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
+                               QFrame,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel,
                                QLineEdit, QMessageBox, QPushButton, QSplitter,
                                QTableWidget, QTableWidgetItem, QVBoxLayout,
@@ -17,6 +18,7 @@ from .. import analytics
 from ..analytics import ProductStat
 from ..catalog import CATEGORIES
 from ..paths import exports_dir
+from .add_product import AddProductDialog
 from .charts import SERIES_COLOURS, PriceChart
 from .theme import change_colour
 from .widgets import format_change, num_font
@@ -40,6 +42,7 @@ class CategoryView(QWidget):
         self.category = category
         self._stats: List[ProductStat] = []
         self._visible: List[ProductStat] = []
+        self._custom_ids: set[int] = set()
         self._loading = True   # suppress filter callbacks until the table exists
 
         root = QVBoxLayout(self)
@@ -115,6 +118,18 @@ class CategoryView(QWidget):
         reset.setObjectName("Ghost")
         reset.clicked.connect(self._clear_filters)
         layout.addWidget(reset)
+
+        self.add_btn = QPushButton("Add product")
+        self.add_btn.setObjectName("Primary")
+        self.add_btn.clicked.connect(self._add_product)
+        layout.addWidget(self.add_btn)
+
+        self.remove_btn = QPushButton("Remove")
+        self.remove_btn.setObjectName("Ghost")
+        self.remove_btn.setToolTip("Removes a product you added yourself")
+        self.remove_btn.setEnabled(False)
+        self.remove_btn.clicked.connect(self._remove_product)
+        layout.addWidget(self.remove_btn)
         if self.category is None:
             self.watch_only.setChecked(True)
             self.watch_only.setVisible(False)
@@ -216,6 +231,10 @@ class CategoryView(QWidget):
         self._stats = analytics.product_stats(
             self.db, category=self.category, watched_only=(self.category is None)
         )
+        self._custom_ids = {
+            int(r["id"]) for r in self.db.products(category=self.category)
+            if r["custom"]
+        }
         self._refill_filter_options()
         self._apply_filters(restore=selected)
         self._update_summary()
@@ -346,6 +365,7 @@ class CategoryView(QWidget):
 
     def _on_selection(self) -> None:
         ids = self._selected_ids()
+        self._sync_remove_button(ids)
         if not ids:
             self.chart.clear()
             self.empty_note.setText("Pick a product on the left to draw its history.")
@@ -394,6 +414,44 @@ class CategoryView(QWidget):
             self.watch_only.setChecked(False)
 
     # -- actions ----------------------------------------------------------
+    def _sync_remove_button(self, ids: List[int]) -> None:
+        custom = [pid for pid in ids if pid in self._custom_ids]
+        self.remove_btn.setEnabled(len(ids) == 1 and len(custom) == 1)
+
+    def _add_product(self) -> None:
+        dialog = AddProductDialog(self.db, self.settings, self.category, self)
+        if dialog.exec() != QDialog.Accepted or dialog.created_id is None:
+            return
+        row = self.db.product(dialog.created_id)
+        self.refresh(keep_selection=False)
+        if row and row["category"] == self.category:
+            self.select_product(dialog.created_id)
+        self.watch_changed.emit()
+        name = row["name"] if row else "the product"
+        where = CATEGORIES.get(row["category"], {}).get("label", "") if row else ""
+        self.alert_created.emit(
+            f"Added {name}" + (f" to {where}" if where and row and
+                               row["category"] != self.category else "")
+        )
+
+    def _remove_product(self) -> None:
+        ids = [pid for pid in self._selected_ids() if pid in self._custom_ids]
+        if len(ids) != 1:
+            return
+        stat = next((s for s in self._stats if s.id == ids[0]), None)
+        if not stat:
+            return
+        answer = QMessageBox.question(
+            self, "Remove this product?",
+            f"{stat.name} and its whole price history will be deleted.\n\n"
+            "Products that shipped with the app cannot be removed, only ones you added.")
+        if answer != QMessageBox.Yes:
+            return
+        self.db.delete_product(stat.id)
+        self.refresh(keep_selection=False)
+        self.watch_changed.emit()
+        self.alert_created.emit(f"Removed {stat.name}")
+
     def _create_alert(self) -> None:
         ids = self._selected_ids()
         if len(ids) != 1:

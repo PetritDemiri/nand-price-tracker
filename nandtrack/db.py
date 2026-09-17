@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS products (
     baseline    REAL NOT NULL,          -- street price on the baseline date
     surge_scale REAL NOT NULL DEFAULT 1.0,
     watched     INTEGER NOT NULL DEFAULT 0,
-    active      INTEGER NOT NULL DEFAULT 1
+    active      INTEGER NOT NULL DEFAULT 1,
+    custom      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS prices (
@@ -92,7 +93,15 @@ class Database:
     def _init_schema(self) -> None:
         with self._write_lock:
             self.conn.executescript(SCHEMA)
+            self._migrate()
             self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Bring an older database up to the current shape, in place."""
+        columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(products)")}
+        if "custom" not in columns:
+            self.conn.execute(
+                "ALTER TABLE products ADD COLUMN custom INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)
@@ -116,17 +125,20 @@ class Database:
 
     # -- products ---------------------------------------------------------
     def upsert_product(self, p: dict) -> int:
+        p = dict(p)
+        p.setdefault("custom", 0)
         with self._write_lock:
             cur = self.conn.execute(
                 """INSERT INTO products
-                   (sku,name,category,brand,capacity_gb,form_factor,interface,baseline,surge_scale)
+                   (sku,name,category,brand,capacity_gb,form_factor,interface,baseline,
+                    surge_scale,custom)
                    VALUES(:sku,:name,:category,:brand,:capacity_gb,:form_factor,:interface,
-                          :baseline,:surge_scale)
+                          :baseline,:surge_scale,:custom)
                    ON CONFLICT(sku) DO UPDATE SET
                        name=excluded.name, category=excluded.category, brand=excluded.brand,
                        capacity_gb=excluded.capacity_gb, form_factor=excluded.form_factor,
                        interface=excluded.interface, baseline=excluded.baseline,
-                       surge_scale=excluded.surge_scale""",
+                       surge_scale=excluded.surge_scale, custom=excluded.custom""",
                 p,
             )
             self.conn.commit()
@@ -150,6 +162,18 @@ class Database:
 
     def product(self, product_id: int) -> Optional[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
+
+    def sku_exists(self, sku: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM products WHERE sku=?", (sku,)).fetchone() is not None
+
+    def delete_product(self, product_id: int) -> None:
+        """Removes the product and, by cascade, its whole price history."""
+        with self._write_lock:
+            self.conn.execute("DELETE FROM alerts WHERE product_id=?", (product_id,))
+            self.conn.execute("DELETE FROM prices WHERE product_id=?", (product_id,))
+            self.conn.execute("DELETE FROM products WHERE id=?", (product_id,))
+            self.conn.commit()
 
     def set_watched(self, product_id: int, watched: bool) -> None:
         with self._write_lock:

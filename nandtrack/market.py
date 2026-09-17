@@ -178,6 +178,19 @@ def intraday_price(product: dict, when: datetime) -> float:
     return _retail_round(base * (1.0 + wobble))
 
 
+def implied_baseline(category: str, price_today: float, scale: float = 1.0,
+                     day: date | None = None) -> float:
+    """Work backwards: if it costs this much now, what did it cost at the baseline?
+
+    Most people know what a part costs today, not what it cost in September 2025,
+    so the add-product dialog asks for today's price and calls this.
+    """
+    day = day or datetime.now(timezone.utc).date()
+    idx = category_index(category, day)
+    scaled = 1.0 + (idx - 1.0) * float(scale)
+    return max(price_today / max(scaled, 0.01), 0.01)
+
+
 def daily_points(product: dict, start: date, end: date) -> List[Tuple[str, float]]:
     """(ISO timestamp, price) for every day in [start, end], stamped at 12:00 UTC."""
     out: List[Tuple[str, float]] = []

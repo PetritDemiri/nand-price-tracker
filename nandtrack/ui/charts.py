@@ -212,6 +212,14 @@ class PriceChart(QWidget):
         if len(lines) > 10:
             text += f"\n+{len(lines) - 10} more"
         self.readout.setText(text)
+
+        # Flip the box away from whichever edge the cursor is near, otherwise it
+        # runs off the plot and gets clipped at the right-hand side.
+        (x_min, x_max), (y_min, y_max) = view.viewRange()
+        anchor_x = 0.0 if x < (x_min + x_max) / 2.0 else 1.0
+        anchor_y = 0.0 if point.y() > (y_min + y_max) / 2.0 else 1.0
+        self.readout.setAnchor((anchor_x, anchor_y))
+
         self.readout.setPos(x, point.y())
         self.readout.show()
         self.hovered.emit(stamp)
