@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS alerts (
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS index_points (
+    category TEXT NOT NULL,
+    day      TEXT NOT NULL,
+    value    REAL NOT NULL,
+    feed     TEXT NOT NULL,
+    PRIMARY KEY (category, day, feed)
+);
+CREATE INDEX IF NOT EXISTS ix_index_cat_day ON index_points(category, day);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -102,6 +111,11 @@ class Database:
         if "custom" not in columns:
             self.conn.execute(
                 "ALTER TABLE products ADD COLUMN custom INTEGER NOT NULL DEFAULT 0")
+        if "fitted" not in columns:
+            self.conn.execute(
+                "ALTER TABLE products ADD COLUMN fitted INTEGER NOT NULL DEFAULT 0")
+        if "fitted_at" not in columns:
+            self.conn.execute("ALTER TABLE products ADD COLUMN fitted_at TEXT")
 
     def close(self) -> None:
         conn = getattr(self._local, "conn", None)
@@ -278,6 +292,72 @@ class Database:
             GROUP BY d ORDER BY d
         """
         return [(r["d"], float(r["idx"])) for r in self.conn.execute(sql, (category,))]
+
+    # -- external index feed ----------------------------------------------
+    def store_index(self, category: str, feed: str,
+                    points: Iterable[Tuple[str, float]]) -> int:
+        rows = [(category, day, float(value), feed) for day, value in points]
+        if not rows:
+            return 0
+        with self._write_lock:
+            cur = self.conn.executemany(
+                "INSERT INTO index_points(category, day, value, feed) VALUES(?,?,?,?) "
+                "ON CONFLICT(category, day, feed) DO UPDATE SET value=excluded.value",
+                rows,
+            )
+            self.conn.commit()
+        return cur.rowcount or len(rows)
+
+    def index_series(self, category: str, feed: Optional[str] = None) -> List[Tuple[str, float]]:
+        sql = "SELECT day, value FROM index_points WHERE category=?"
+        args: list = [category]
+        if feed:
+            sql += " AND feed=?"
+            args.append(feed)
+        sql += " ORDER BY day"
+        return [(r["day"], float(r["value"])) for r in self.conn.execute(sql, args)]
+
+    def index_feeds(self) -> List[str]:
+        return [r["feed"] for r in
+                self.conn.execute("SELECT DISTINCT feed FROM index_points ORDER BY feed")]
+
+    def clear_index(self, feed: str) -> None:
+        with self._write_lock:
+            self.conn.execute("DELETE FROM index_points WHERE feed=?", (feed,))
+            self.conn.commit()
+
+    # -- observed (non-modelled) prices ------------------------------------
+    def observed(self, product_id: int, exclude: str = "modelled") -> List[Tuple[datetime, float]]:
+        """Real quotes only - what a source actually reported, never the curve."""
+        return [
+            (parse_iso(r["ts"]), float(r["p"]))
+            for r in self.conn.execute(
+                "SELECT ts, MIN(price) p FROM prices WHERE product_id=? AND source<>? "
+                "GROUP BY ts ORDER BY ts", (product_id, exclude))
+        ]
+
+    def observed_counts(self, exclude: str = "modelled") -> dict:
+        return {
+            int(r["pid"]): int(r["n"])
+            for r in self.conn.execute(
+                "SELECT product_id pid, COUNT(DISTINCT substr(ts,1,10)) n FROM prices "
+                "WHERE source<>? GROUP BY product_id", (exclude,))
+        }
+
+    def set_fit(self, product_id: int, baseline: float, scale: float, when: str) -> None:
+        with self._write_lock:
+            self.conn.execute(
+                "UPDATE products SET baseline=?, surge_scale=?, fitted=1, fitted_at=? WHERE id=?",
+                (round(baseline, 2), round(scale, 4), when, product_id))
+            self.conn.commit()
+
+    def drop_modelled_after(self, day: str, source: str = "modelled") -> int:
+        """Throw away the modelled tail so it can be rewritten against a new curve."""
+        with self._write_lock:
+            cur = self.conn.execute(
+                "DELETE FROM prices WHERE source=? AND ts>=?", (source, day))
+            self.conn.commit()
+        return cur.rowcount or 0
 
     # -- alerts -----------------------------------------------------------
     def alerts(self, enabled_only: bool = True) -> List[sqlite3.Row]:

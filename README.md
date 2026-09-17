@@ -77,6 +77,50 @@ RTX 5080 to about €1,595; RX 9070 XT to about €1,037.
 So the shape, the timing and the magnitude are right, and an individual
 Tuesday is not a receipt. Which brings us to:
 
+## Making the curve self-updating
+
+Everything above describes a curve baked into `market.py`. Its anchors run to
+15 September 2026, which is as far as published contract-price reporting went
+when they were written; past that it was a straight line. Settings → Market
+index replaces that straight line with fetched data.
+
+**FRED** is the built-in feed: the US Federal Reserve's data service, free, with
+a free API key, serving an official producer price index. It is monthly and
+lagged a couple of weeks, so it will not tick — but it keeps the curve honest
+indefinitely without anyone maintaining it. If the default series id does not
+suit, put a different one in the box; the Fetch button reports back exactly what
+FRED says about an id it does not recognise.
+
+**CSV** takes any address returning `date,value` rows — an export from a
+market-intelligence service you subscribe to, a sheet you maintain yourself,
+anything you are allowed to read.
+
+A broad semiconductor index does not move 4.4× when a DDR5 kit does, so the
+fetched series is not substituted for the curve. The app measures how far each
+category moved for every point the index moved, over the window where both are
+known, and carries the curve forward on that ratio. For RAM it works out at
+roughly ten times the index; for GPUs, under two. Nothing before the handover
+date ever changes, and the two meet exactly at the join.
+
+## Learning from real prices
+
+When you add a product you tell it what the part costs today and roughly how
+hard it follows its category. Both are guesses. Once a few days of real quotes
+have arrived from your own sources, the app fits
+
+    price = baseline × (1 + scale × (index − 1))
+
+against them and replaces both numbers with measured ones. Products whose
+figures came from measurement rather than assumption are marked with ◉ in the
+tables.
+
+Separating the starting price from the trend factor needs the curve to have
+moved while the app was watching — a few percent is enough. On a flat month it
+corrects the price, leaves the trend alone, and says so rather than returning a
+confident wrong answer. Modelled points get redrawn under the new parameters;
+observed prices are never touched, so a re-fit can't quietly rewrite something
+a retailer actually reported.
+
 ## Wiring up real prices
 
 Settings → Price sources → **Create a starter sources.json**, then fill in URLs

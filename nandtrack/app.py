@@ -65,6 +65,14 @@ def main() -> int:
                              f"The price database could not be opened.\n\n{exc}")
         return 1
 
+    # A cached market index reshapes the curve, so it has to be in place before
+    # any history is drawn against it.
+    try:
+        from .marketdata import load_into_curve
+        load_into_curve(db)
+    except Exception:                         # noqa: BLE001
+        traceback.print_exc()
+
     splash = None
     if not is_seeded(db):
         splash = _splash(settings.theme)

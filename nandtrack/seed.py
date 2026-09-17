@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Callable, Optional
 
 from .catalog import CATALOG, DEFAULT_WATCHLIST
@@ -47,6 +47,45 @@ def backfill(db: Database, progress: Optional[Callable[[int, int], None]] = None
         if progress:
             progress(i, len(rows))
     db.set_meta("last_backfill", datetime.now(timezone.utc).isoformat())
+    return written
+
+
+def rebuild_modelled(db: Database, product_id: int) -> int:
+    """Redraw one product's modelled history after its parameters changed.
+
+    Observed prices are never touched - only the generated points are replaced,
+    so a re-fit cannot quietly rewrite something a retailer actually reported.
+    """
+    row = db.product(product_id)
+    if not row:
+        return 0
+    with db._write_lock:
+        db.conn.execute("DELETE FROM prices WHERE product_id=? AND source=?",
+                        (product_id, MODELLED))
+        db.conn.commit()
+    product = {"sku": row["sku"], "category": row["category"],
+               "baseline": row["baseline"], "surge_scale": row["surge_scale"]}
+    today = datetime.now(timezone.utc).date()
+    points = daily_points(product, BASELINE_DATE, today)
+    return db.insert_prices([(product_id, ts, price, MODELLED) for ts, price in points])
+
+
+def refresh_tail(db: Database, pivot: date) -> int:
+    """Rewrite every modelled point from `pivot` on, against the current curve.
+
+    Called when a live index feed changes the shape of the future: the anchors
+    before the pivot are published history and stay put, the tail is redrawn.
+    """
+    stamp = datetime.combine(pivot, time(0, 0), tzinfo=timezone.utc).isoformat()
+    db.drop_modelled_after(stamp)
+    today = datetime.now(timezone.utc).date()
+    written = 0
+    for row in db.products():
+        product = {"sku": row["sku"], "category": row["category"],
+                   "baseline": row["baseline"], "surge_scale": row["surge_scale"]}
+        points = daily_points(product, pivot, today)
+        written += db.insert_prices(
+            [(int(row["id"]), ts, price, MODELLED) for ts, price in points])
     return written
 
 

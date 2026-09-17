@@ -31,6 +31,12 @@ class Settings:
     log_scale: bool = False
     last_view: str = "dashboard"
     window_geometry: str = ""            # base64 QByteArray
+    index_provider: str = "off"          # off | fred | csv
+    fred_api_key: str = ""
+    fred_series: Dict[str, str] = field(default_factory=dict)
+    index_csv_urls: Dict[str, str] = field(default_factory=dict)
+    index_refresh_hours: int = 12
+    auto_calibrate: bool = True
     extra: Dict[str, Any] = field(default_factory=dict)
 
     # -- persistence ------------------------------------------------------

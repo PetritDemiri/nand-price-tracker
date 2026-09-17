@@ -43,6 +43,7 @@ class CategoryView(QWidget):
         self._stats: List[ProductStat] = []
         self._visible: List[ProductStat] = []
         self._custom_ids: set[int] = set()
+        self._fitted_ids: set[int] = set()
         self._loading = True   # suppress filter callbacks until the table exists
 
         root = QVBoxLayout(self)
@@ -162,7 +163,8 @@ class CategoryView(QWidget):
         layout.addWidget(self.table, 1)
 
         hint = QLabel("Select several rows to overlay them. The star follows a product "
-                      "on the dashboard.")
+                      "on the dashboard. A \u25c9 means that product's numbers were "
+                      "measured from real quotes rather than modelled.")
         hint.setObjectName("CardFoot")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -231,10 +233,9 @@ class CategoryView(QWidget):
         self._stats = analytics.product_stats(
             self.db, category=self.category, watched_only=(self.category is None)
         )
-        self._custom_ids = {
-            int(r["id"]) for r in self.db.products(category=self.category)
-            if r["custom"]
-        }
+        rows = self.db.products(category=self.category)
+        self._custom_ids = {int(r["id"]) for r in rows if r["custom"]}
+        self._fitted_ids = {int(r["id"]) for r in rows if r["fitted"]}
         self._refill_filter_options()
         self._apply_filters(restore=selected)
         self._update_summary()
@@ -290,10 +291,14 @@ class CategoryView(QWidget):
             star.setToolTip("Follow this product on the dashboard")
             star.setData(Qt.UserRole, s.id)
 
-            name = QTableWidgetItem(s.name)
+            measured = s.id in self._fitted_ids
+            name = QTableWidgetItem(("\u25c9 " if measured else "") + s.name)
             name.setData(Qt.UserRole, s.id)
-            name.setToolTip(f"{s.brand} \u00b7 {s.interface or s.form_factor}\n"
-                            f"Baseline {money(s.baseline)} on 1 Sep 2025")
+            name.setToolTip(
+                f"{s.brand} \u00b7 {s.interface or s.form_factor}\n"
+                f"Baseline {money(s.baseline)} on 1 Sep 2025\n"
+                + ("Fitted to prices your sources actually reported"
+                   if measured else "Modelled from the category curve"))
 
             cap = QTableWidgetItem(
                 f"{s.capacity_gb // 1000} TB" if s.capacity_gb and s.capacity_gb >= 1000

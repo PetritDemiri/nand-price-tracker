@@ -263,7 +263,8 @@ class MainWindow(QMainWindow):
     # -- polling ----------------------------------------------------------
     def _start_fetching(self) -> None:
         self.fetcher = FetchController(
-            self.db.path, self.settings.poll_seconds, self.settings.use_live_sources, self)
+            self.db.path, self.settings.poll_seconds, self.settings.use_live_sources,
+            self.settings, self)
         self.fetcher.cycle_started.connect(lambda: self._set_status("checking"))
         self.fetcher.cycle_finished.connect(self._on_cycle)
         self.fetcher.start()

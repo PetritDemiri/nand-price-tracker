@@ -98,10 +98,7 @@ class Dashboard(QWidget):
         self.chart.set_mode("price")
         layout.addWidget(self.chart, 1)
 
-        self.legend_note = QLabel(
-            "100 = the cheapest price for that product on 1 September 2025. "
-            "Each line is the average across the products tracked in that category."
-        )
+        self.legend_note = QLabel()
         self.legend_note.setObjectName("CardFoot")
         self.legend_note.setWordWrap(True)
         layout.addWidget(self.legend_note)
@@ -170,6 +167,8 @@ class Dashboard(QWidget):
                 colour,
             )
 
+        self._update_provenance()
+
         last = self.db.last_ts()
         worst = max((c.since_surge or 0) for c in cats) if cats else 0
         leader = next((c.label for c in cats if (c.since_surge or 0) == worst), "")
@@ -178,6 +177,24 @@ class Dashboard(QWidget):
             f"{format_change(worst, 0)} across {sum(c.count for c in cats)} tracked products"
             + (f" \u00b7 latest sample {last.astimezone().strftime('%d %b %H:%M')}" if last else "")
         )
+
+    def _update_provenance(self) -> None:
+        """Say plainly where the numbers on this chart came from."""
+        base = ("100 = the cheapest price for that product on 1 September 2025. "
+                "Each line is the average across the products tracked in that category.")
+        from .. import market
+        from ..marketdata import LAST_REPORTED
+        feed = self.db.get_meta("index_feed") if market.has_extension() else None
+        observed = sum(1 for n in self.db.observed_counts().values() if n)
+        bits = [base]
+        if feed:
+            bits.append(f"Modelled from published contract pricing to "
+                        f"{LAST_REPORTED.strftime('%d %B %Y')}, then driven by {feed}.")
+        else:
+            bits.append("Modelled throughout from published contract pricing.")
+        if observed:
+            bits.append(f"{observed} product(s) also carry real quotes from your own sources.")
+        self.legend_note.setText(" ".join(bits))
 
     def _fill_movers(self) -> None:
         rows = analytics.movers(self.db, days=7, limit=10)

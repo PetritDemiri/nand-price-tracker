@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import math
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 BASELINE_DATE = date(2025, 9, 1)
 
@@ -122,8 +122,36 @@ def _interp(anchors: Sequence[Tuple[date, float]], day: date) -> float:
     return anchors[-1][1]
 
 
-def category_index(category: str, day: date) -> float:
-    """Category-wide multiplier against the 1 Sep 2025 baseline."""
+# Filled in by marketdata.load_into_curve() when a live index is configured.
+# Empty means the shipped anchors are all there is, which is the offline case.
+_EXTENSION: Dict[str, List[Tuple[date, float]]] = {}
+
+
+def set_extension(extension: Dict[str, List[Tuple[date, float]]]) -> None:
+    """Hand the curve a data-driven tail. Pass {} to go back to the anchors."""
+    global _EXTENSION
+    _EXTENSION = {k: sorted(v) for k, v in (extension or {}).items() if v}
+
+
+def extension_range(category: str) -> Optional[Tuple[date, date]]:
+    points = _EXTENSION.get(category)
+    return (points[0][0], points[-1][0]) if points else None
+
+
+def has_extension() -> bool:
+    return bool(_EXTENSION)
+
+
+def category_index(category: str, day: date, dynamic: bool = True) -> float:
+    """Category-wide multiplier against the 1 Sep 2025 baseline.
+
+    With dynamic=False you always get the shipped anchors, which is what the
+    elasticity fit needs so it is not measuring itself.
+    """
+    if dynamic:
+        points = _EXTENSION.get(category)
+        if points and day >= points[0][0]:
+            return _interp(points, day)
     return _interp(ANCHORS.get(category, ANCHORS["nvme_ssd"]), day)
 
 

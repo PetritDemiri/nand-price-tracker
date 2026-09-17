@@ -2,7 +2,7 @@
 
 APP_NAME = "NANDTrack"
 APP_TAGLINE = "PC hardware prices through the memory shortage"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 ORG_NAME = "NANDTrack"
 
 # The market event this app exists to measure.
