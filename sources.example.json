@@ -1,0 +1,21 @@
+{
+  "retailer": "my-retailer",
+  "timeout": 12,
+  "currency": "EUR",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NANDTrack/1.0",
+  "products": {
+    "nvme-sn850x-2tb": {
+      "url": "https://www.example-shop.com/wd-black-sn850x-2tb",
+      "selector": "span.product-price",
+      "regex": "([0-9][0-9.,]*)"
+    },
+    "ram-ddr5-32-6000c30": {
+      "url": "https://www.example-shop.com/corsair-vengeance-32gb-ddr5-6000",
+      "selector": "[data-testid='price']"
+    },
+    "gpu-rtx5070": {
+      "url": "https://www.example-shop.com/geforce-rtx-5070",
+      "regex": "\"price\"\\s*:\\s*\"?([0-9][0-9.,]*)"
+    }
+  }
+}
